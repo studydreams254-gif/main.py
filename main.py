@@ -1,6 +1,8 @@
-import asyncio
+import os
 import random
+import asyncio
 import sqlite3
+from aiohttp import web
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
@@ -150,7 +152,6 @@ def get_top_players():
 
 user_states = {}
 
-# Asosiy menyu
 main_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="🚀 Testni boshlash")],
@@ -159,7 +160,6 @@ main_menu = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
-# Kategoriyalar (fanlar) menyusi
 category_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="🐍 Python / IT"), KeyboardButton(text="🌍 Geografiya")],
@@ -169,7 +169,6 @@ category_menu = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
-# Savolni yuborish
 async def send_next_question(user_id: int):
     state = user_states.get(user_id)
     if not state:
@@ -191,7 +190,6 @@ async def send_next_question(user_id: int):
 
     asyncio.create_task(timer_checker(user_id, step))
 
-# 20 soniyalik taymer
 async def timer_checker(user_id: int, current_step: int):
     await asyncio.sleep(21)
     state = user_states.get(user_id)
@@ -199,7 +197,6 @@ async def timer_checker(user_id: int, current_step: int):
         await bot.send_message(user_id, "⌛ <b>Vaqt tugadi!</b> Keyingi savolga o'tamiz...", parse_mode="HTML")
         await advance_quiz(user_id)
 
-# Keyingi savol yoki natija
 async def advance_quiz(user_id: int):
     state = user_states.get(user_id)
     if not state:
@@ -241,13 +238,11 @@ async def start_handler(message: types.Message):
     await message.answer(
         f"Assalomu alaykum, <b>{message.from_user.first_name}</b>!\n\n"
         "🎯 <b>Intellektual Quiz Bot</b>ga xush kelibsiz.\n"
-        "Endi siz o'zingiz xohlagan fanni tanlab test topshirishingiz mumkin!\n\n"
         "Boshlash uchun pastdagi <b>'🚀 Testni boshlash'</b> tugmasini bosing:",
         reply_markup=main_menu,
         parse_mode="HTML"
     )
 
-# "🚀 Testni boshlash" bosilganda fanlar ro'yxatini chiqarish
 @dp.message(F.text == "🚀 Testni boshlash")
 @dp.message(Command("quiz"))
 async def choose_category_handler(message: types.Message):
@@ -257,19 +252,16 @@ async def choose_category_handler(message: types.Message):
         reply_markup=category_menu
     )
 
-# Bosh menyuga qaytish
 @dp.message(F.text == "⬅️ Bosh menyuga qaytish")
 async def back_to_menu_handler(message: types.Message):
     await message.answer("Bosh menyudasiz:", reply_markup=main_menu)
 
-# Fan tanlanganda testni boshlash
 @dp.message(F.text.in_(["🐍 Python / IT", "🌍 Geografiya", "📜 Tarix", "🎲 Aralash test"]))
 async def start_quiz_category(message: types.Message):
     user_id = message.from_user.id
     selected_category = message.text
 
     if selected_category == "🎲 Aralash test":
-        # Barcha fanlardagi savollarni bitta ro'yxatga yig'amiz
         all_pool = []
         for cat_questions in CATEGORIES_DATA.values():
             all_pool.extend(cat_questions)
@@ -294,7 +286,6 @@ async def start_quiz_category(message: types.Message):
     )
     await send_next_question(user_id)
 
-# Foydalanuvchi javobi
 @dp.poll_answer()
 async def poll_answer_handler(quiz_answer: types.PollAnswer):
     user_id = quiz_answer.user.id
@@ -308,28 +299,38 @@ async def poll_answer_handler(quiz_answer: types.PollAnswer):
 
     await advance_quiz(user_id)
 
-# Reyting
 @dp.message(F.text == "🏆 Reyting (Top-10)")
 async def leaderboard_handler(message: types.Message):
     top_players = get_top_players()
-
     if not top_players:
         await message.answer("Hozircha reyting jadvalida hech kim yo'q.")
         return
 
     text = "🏆 <b>Eng yuqori natijalar (Top-10):</b>\n\n"
     medals = ["🥇", "🥈", "🥉"]
-
     for i, (name, score) in enumerate(top_players, 1):
         icon = medals[i - 1] if i <= 3 else f"{i}."
         text += f"{icon} <b>{name}</b> — {score} ball\n"
 
     await message.answer(text, parse_mode="HTML")
 
-# Ishga tushirish
+# --- RENDER SERVERI UCHUN TALAB QILINGAN QISM ---
+async def handle_ping(request):
+    return web.Response(text="Bot muvaffaqiyatli ishlayapti!")
+
 async def main():
     init_db()
-    print("✅ KATEGORIYALAR BILAN BOT ISHGA TUSHDI...")
+
+    # Render uchun portni ochish
+    app = web.Application()
+    app.router.add_get("/", handle_ping)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.environ.get("PORT", 8080))
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+
+    print(f"Bot va veb-server {port}-portda ishga tushdi...")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
